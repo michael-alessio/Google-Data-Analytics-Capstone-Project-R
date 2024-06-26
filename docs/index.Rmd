@@ -1,0 +1,311 @@
+---
+title: "Google Data Analytics Certification - Capstone Project"
+author: "Michael Alessio"
+date: "2024-06-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# FitBit Data Case Study
+
+## Ask Phase
+
+### Company Notes:
+
+* Company name - Bellabeat
+* Mission - Manufacture and utilize aesthetically pleasing wearable technology to collect data on activity, sleep, stress, and reproductive health in order to inform, inspire, and empower women around the world. 
+* Rapidly growing small company looking to grow into a larger player in the smart device market
+* Sold through online retailers as well as their own ecommerce channel on website
+* Focus on digital marketing and maintaining social media presence
+
+### Products:
+
+* Leaf - worn as a bracelet, necklace or clip to collect health data
+* Time - watch to collect health data
+* Spring - Water bottle to track hydration levels
+* App - connect users with data collected
+* Subscription - 24/7 access to personalized guidance based on their health data
+
+### Task
+*"Sršen (Cofounder/CCO) asks you to analyze smart device usage data in order to gain insight into how consumers use non-Bellabeat smart devices. She then wants you to select one Bellabeat product to apply these insights to in your presentation. These questions will guide your analysis:*
+
+* *What are some trends in smart device usage?* 
+* *How could these trends apply to Bellabeat customers?* 
+* *How could these trends help influence Bellabeat marketing strategy?* 
+
+*You will produce a report with the following deliverables:*
+
+* *A clear summary of the business task* 
+* *A description of all data sources used* 
+* *Documentation of any cleaning or manipulation of data* 
+* *A summary of your analysis* 
+* *Supporting visualizations and key findings* 
+* *Your top high-level content recommendations based on your analysis"*
+
+### Description of Project Task
+Uncover and understand trends among smart device users by analyzing competitor user data. Show how these trends apply to Bellabeat customers and recommend potential marketing strategies to capitalize on these trends.
+
+
+## Prepare Phase
+
+### Data Source
+*"Sršen encourages you to use public data that explores smart device users’ daily habits. She points you to a specific data set:* 
+
+* *FitBit Fitness Tracker Data (CC0: Public Domain, dataset made available through Mobius): This Kaggle data set contains personal fitness tracker from thirty fitbit users. Thirty eligible Fitbit users consented to the submission of personal tracker data, including minute-level output for physical activity, heart rate, and sleep monitoring. It includes information about daily activity, steps, and heart rate that can be used to explore users’ habits."*
+
+### Data Description 
+Contains personal fitness tracker data from 30 FitBit users. Contains information such as daily activity, steps, heart rate, and sleeping habits for the users. Each of the areas monitored contain data collected in tables sorted by user ID (private key) and time of information collected. Tables monitor this data in separate tables either in minute, hour, or daily intervals. The data was collected over the course of 2 months with separate datasets for each month.
+
+### Data Integrity 
+Being a highly utilized and rated dataset from Kaggle, it can be inferred that the data contained is from a trusted source. However, there is a large probability of sample bias, due to the low sample size (30 users). A larger sample size or demographics of the sampled users may allow us to investigate further into the validity. There is also a very short time period over which the data is measured. In order to get the best understanding of the data, it would be ideal to have a full year of results to eliminate the possibility of seasonality bias.
+
+
+## Process Phase
+
+### Importing
+
+Import all needed packages
+```{r, message=FALSE}
+library(tidyverse)
+library(readr)
+library(dplyr)
+library(here)
+library(skimr)
+library(janitor)
+library(ggplot2)
+```
+
+Import all of the needed datasets as combined tables containing both months of data
+```{r, message=FALSE}
+activity <- bind_rows(read_csv("Fitbit_Data/march_data/dailyActivity_merged.csv"),read_csv("Fitbit_Data/april_data/dailyActivity_merged.csv"))
+calories <- bind_rows(read_csv("Fitbit_Data/march_data/hourlyCalories_merged.csv"),read_csv("Fitbit_Data/april_data/hourlyCalories_merged.csv"))
+intensity <- bind_rows(read_csv("Fitbit_Data/march_data/hourlyIntensities_merged.csv"),read_csv("Fitbit_Data/april_data/hourlyIntensities_merged.csv"))
+steps <- bind_rows(read_csv("Fitbit_Data/march_data/hourlySteps_merged.csv"),read_csv("Fitbit_Data/april_data/hourlySteps_merged.csv"))
+```
+
+### Data Cleaning
+
+Eliminate any duplicates
+```{r, message=FALSE}
+activity<-distinct(activity)
+calories<-distinct(calories)
+intensity<-distinct(intensity)
+steps<-distinct(steps)
+```
+
+Clean column names by making them only correct column naming characters and setting them to lowercase
+```{r, message=FALSE}
+activity<-clean_names(activity)
+calories<-clean_names(calories)
+intensity<-clean_names(intensity)
+steps<-clean_names(steps)
+
+activity<-rename_with(activity,tolower)
+calories<-rename_with(calories,tolower)
+intensity<-rename_with(intensity,tolower)
+steps<-rename_with(steps,tolower)
+```
+
+Convert dates into a useable format
+```{r, message=FALSE}
+activity$activity_date<-mdy(activity$activity_date)
+calories$activity_hour<-mdy_hms(calories$activity_hour)
+intensity$activity_hour<-mdy_hms(intensity$activity_hour)
+steps$activity_hour<-mdy_hms(steps$activity_hour)
+```
+
+Since calories, intensity, and steps are in hourly data, we will need to convert date/time into just dates so that we can later aggregate it into daily data
+```{r, message=FALSE}
+calories<-calories %>% 
+  mutate(activity_date=as_date(activity_hour))
+intensity<-intensity %>% 
+  mutate(activity_date=as_date(activity_hour))
+steps<-steps %>% 
+  mutate(activity_date=as_date(activity_hour))
+```
+
+Now we can aggregate or data by sorting by ID and date and creating a summary statistic for each table (eliminating one invalid entry for Activity)
+```{r, message=FALSE}
+calories<-calories %>% 
+  group_by(id,activity_date) %>% 
+  summarize(daily_calories=sum(calories))
+intensity<-intensity %>% 
+  group_by(id,activity_date) %>% 
+  summarize(daily_intensity=sum(total_intensity))
+steps<-steps %>% 
+  group_by(id,activity_date) %>% 
+  summarize(daily_steps=sum(step_total))
+
+activity<-activity %>% 
+  mutate(active_to_sedentary=round(((very_active_minutes+fairly_active_minutes+lightly_active_minutes/sedentary_minutes)/sedentary_minutes)*100,2))
+activity<-activity %>% 
+  group_by(id,activity_date) %>% 
+  summarize(active_to_sedentary=sum(active_to_sedentary))
+activity<-activity[-c(641),]
+```
+
+
+## Analyze Phase
+
+For the analysis we can categorize the users from each of the four tables into low, moderate, or high categories depending on each of the tables respective summary statistic
+
+### Activity
+```{r, message=FALSE}
+avg_activity<-activity %>% 
+  group_by(id) %>% 
+  summarize(avg_active_to_sedentary=mean(active_to_sedentary))
+
+avg_activity<-avg_activity %>% 
+  mutate(active_type=case_when(avg_active_to_sedentary>=0&avg_active_to_sedentary<5 ~ "low_activity",
+                               avg_active_to_sedentary>=5&avg_active_to_sedentary<10 ~ "moderate_activity",
+                               .default = "high_activity"))
+
+avg_activity_grouped<-avg_activity %>% 
+  group_by(active_type) %>%
+  summarize(amount=n()) %>%
+  mutate(total=sum(amount),percentage=round((amount/total)*100,2))
+```
+
+### Calories
+```{r, message=FALSE}
+avg_calories<-calories %>% 
+  group_by(id) %>% 
+  summarize(avg_daily_calories=mean(daily_calories))
+
+avg_calories<-avg_calories %>% 
+  mutate(calorie_type=case_when(avg_daily_calories>=0&avg_daily_calories<1600 ~ "low_calorie",
+                               avg_daily_calories>=1600&avg_daily_calories<2400 ~ "moderate_calorie",
+                               .default = "high_calorie"))
+
+avg_calories_grouped<-avg_calories %>% 
+  group_by(calorie_type) %>%
+  summarize(amount=n()) %>%
+  mutate(total=sum(amount),percentage=round((amount/total)*100,2))
+```
+
+### Intensity
+```{r, message=FALSE}
+avg_intensity<-intensity %>% 
+  group_by(id) %>% 
+  summarize(avg_daily_intensity=mean(daily_intensity))
+
+avg_intensity<-avg_intensity %>% 
+  mutate(intensity_type=case_when(avg_daily_intensity>=0&avg_daily_intensity<150 ~ "low_intensity",
+                                avg_daily_intensity>=150&avg_daily_intensity<300 ~ "moderate_intensity",
+                                .default = "high_intensity"))
+
+avg_intensity_grouped<-avg_intensity %>% 
+  group_by(intensity_type) %>%
+  summarize(amount=n()) %>%
+  mutate(total=sum(amount),percentage=round((amount/total)*100,2))
+```
+
+### Steps
+```{r, message=FALSE}
+avg_steps<-steps %>% 
+  group_by(id) %>% 
+  summarize(avg_daily_steps=mean(daily_steps))
+
+avg_steps<-avg_steps %>% 
+  mutate(steps_type=case_when(avg_daily_steps>=0&avg_daily_steps<5000 ~ "low_steps",
+                                  avg_daily_steps>=5000&avg_daily_steps<10000 ~ "moderate_steps",
+                                  .default = "high_steps"))
+
+avg_steps_grouped<-avg_steps %>% 
+  group_by(steps_type) %>%
+  summarize(amount=n()) %>%
+  mutate(total=sum(amount),percentage=round((amount/total)*100,2))
+```
+
+
+## Visualize Phase
+
+In order to visualize the data we can create Pie Charts showing the breakdown of the categories for each table
+
+### Activity
+```{r, message=FALSE}
+ggplot(avg_activity_grouped, aes(x="", y=amount, fill=active_type)) +
+  geom_bar(stat="identity", width=1) + 
+  scale_fill_manual(values = c("lightgreen","maroon","lightblue")) +
+  coord_polar("y", start=0) +
+  theme_void() +
+  labs(title="Users by Activity Level") +
+  theme(plot.title=element_text(hjust=0.5)) +
+  geom_text(aes(label=percentage),position=position_stack(vjust=0.5))
+```
+
+Takeaway - FitBit users tend to participate in low amounts of activity.
+
+### Calories
+```{r, message=FALSE}
+ggplot(avg_calories_grouped, aes(x="", y=amount, fill=calorie_type)) +
+  geom_bar(stat="identity", width=1) + 
+  scale_fill_manual(values = c("lightgreen","maroon","lightblue")) +
+  coord_polar("y", start=0) +
+  theme_void() +
+  labs(title="Users by Calorie Level") +
+  theme(plot.title=element_text(hjust=0.5)) +
+  geom_text(aes(label=percentage),position=position_stack(vjust=0.5))
+```
+
+Takeaway - FitBit users tend to burn high amounts of calories when compared to the average person
+
+### Intensity
+```{r, message=FALSE}
+ggplot(avg_intensity_grouped, aes(x="", y=amount, fill=intensity_type)) +
+  geom_bar(stat="identity", width=1) + 
+  scale_fill_manual(values = c("lightgreen","maroon","lightblue")) +
+  coord_polar("y", start=0) +
+  theme_void() +
+  labs(title="Users by Intensity Level") +
+  theme(plot.title=element_text(hjust=0.5)) +
+  geom_text(aes(label=percentage),position=position_stack(vjust=0.5))
+```
+
+Takeaway - FitBit users tend to participate in higher intensity activities throughout the day
+
+### Steps
+```{r, message=FALSE}
+ggplot(avg_steps_grouped, aes(x="", y=amount, fill=steps_type)) +
+  geom_bar(stat="identity", width=1) + 
+  scale_fill_manual(values = c("lightgreen","maroon","lightblue")) +
+  coord_polar("y", start=0) +
+  theme_void() +
+  labs(title="Users by Steps Level") +
+  theme(plot.title=element_text(hjust=0.5)) +
+  geom_text(aes(label=percentage),position=position_stack(vjust=0.5))
+```
+
+Takeaway - Fitbit users tend to take low amounts of steps per day
+
+
+## Share Phase
+
+### Insights
+
+When analyzing the first table of 'activities', I created a summary statistic containing a ratio of time spent active to time spend sedentary. By visualizing this data, it was shown that the users in this dataset, tend to be on the lower end of this value. Initially it would seem that the users were not very active which seemed a bit odd due to the context surrounding the inferred target market of FitBit. It was clear I needed more insight on the other tables to confirm if this was true. 
+
+From here I analyzed the three other tables similarly. In doing this, I found that steps had a similar result as the activity table, but the intensity and calories tables were skewed in the opposite direction. This shined more light on the discovery found from the activities table. 
+
+From all three data tables, it is clear that the users in the data set typically participate in shorter term high intensity workouts to ultimately burn more calories and exhaust a higher total energy per day than the average female. 
+
+
+## Act Phase
+
+### Significance of Insights
+
+The results of my analysis show that there is a high likelihood that a member of the smart technology market would be someone who participates in short term high intensity workouts. Using this information, we can target people who participate in sports rather than people who just try to maintain a healthy and non sedentary lifestyle as athletes would likely have this same trend.
+
+### Recommendation
+
+Because of this my recommendation would be to launch a social media campaign of the Leaf product, targeting athletes of high intensity sports. Being that the Leaf product is the most easily adaptable to high intensity workouts due to its variety of ways to wear it, it would be the most suited to be worn by athletes. 
+
+### Opportunities For Future Analysis
+
+* Due to the small sample size and time frame, it could be beneficial to collect data of more users (at least 200) and of a larger time frame (1 full year) to confirm their is no sample or seasonality bias in these results.
+* To pin point which sports are most beneficial to target in the campaign specifically, we could perform an analysis of the intensity data after collecting it from users performing different sports. From this we would be able to determine which sports most closely match the results of this analysis.
+* One major element lacking from these datasets was the demographics of the users. If we could collect similar data but containing some demographic information, there are many more opportunities of insights that we could find upon analysis.
